@@ -2,9 +2,8 @@ package com.kickstarter.services.interceptors
 
 import android.net.Uri
 import com.kickstarter.libs.Build
-import com.kickstarter.libs.CurrentUserType
+import com.kickstarter.libs.CurrentUserTypeV2
 import com.kickstarter.libs.FirebaseHelper
-import com.kickstarter.libs.perimeterx.PerimeterXClientType
 import com.kickstarter.libs.utils.WebUtils.userAgent
 import com.kickstarter.libs.utils.extensions.isApiUri
 import okhttp3.HttpUrl
@@ -17,9 +16,8 @@ import java.io.IOException
 
 class ApiRequestInterceptor(
     private val clientId: String,
-    private val currentUser: CurrentUserType,
+    private val currentUser: CurrentUserTypeV2,
     private val endpoint: String,
-    private val pxManager: PerimeterXClientType,
     private val build: Build
 ) : Interceptor {
 
@@ -27,7 +25,6 @@ class ApiRequestInterceptor(
 
     override fun intercept(chain: Chain): Response {
         val response: Response = chain.proceed(request(chain.request()))
-        pxManager.intercept(response)
         return response
     }
 
@@ -41,7 +38,9 @@ class ApiRequestInterceptor(
             .addHeader("Kickstarter-Android-App-UUID", FirebaseHelper.identifier)
             .addHeader("User-Agent", userAgent(build))
 
-        pxManager.addHeaderTo(builder)
+        this.currentUser.accessToken?.let { token ->
+            if (token.isNotEmpty()) builder.addHeader("X-Auth", "token $token")
+        }
 
         return builder
             .url(url(initialRequest.url))
@@ -51,12 +50,6 @@ class ApiRequestInterceptor(
     private fun url(initialHttpUrl: HttpUrl): HttpUrl {
         val builder: Builder = initialHttpUrl.newBuilder()
             .setQueryParameter("client_id", clientId)
-        currentUser.observable()
-            .subscribe {
-                if (currentUser.accessToken != null) {
-                    builder.setQueryParameter("oauth_token", currentUser.accessToken)
-                }
-            }
         return builder.build()
     }
 

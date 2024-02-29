@@ -44,6 +44,7 @@ import com.kickstarter.services.apiresponses.EmailVerificationEnvelope
 import com.kickstarter.services.apiresponses.EmailVerificationEnvelope.Companion.builder
 import com.kickstarter.services.apiresponses.MessageThreadEnvelope
 import com.kickstarter.services.apiresponses.MessageThreadsEnvelope
+import com.kickstarter.services.apiresponses.OAuthTokenEnvelope
 import com.kickstarter.services.apiresponses.ProjectStatsEnvelope
 import com.kickstarter.services.apiresponses.ProjectsEnvelope
 import com.kickstarter.services.apiresponses.ShippingRulesEnvelope
@@ -291,6 +292,17 @@ open class MockApiClientV2 : ApiClientTypeV2 {
         return Observable.just(sydney())
     }
 
+    override fun loginWithCodes(
+        codeVerifier: String,
+        code: String,
+        clientId: String
+    ): Observable<OAuthTokenEnvelope> {
+        return Observable.just(
+            OAuthTokenEnvelope.builder()
+                .accessToken("deadbeef")
+                .build()
+        )
+    }
     override fun login(email: String, password: String): Observable<AccessTokenEnvelope> {
         return Observable.just(
             AccessTokenEnvelope.builder()

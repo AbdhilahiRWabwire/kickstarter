@@ -5,29 +5,39 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.kickstarter.libs.ApiEndpoint
 import com.kickstarter.libs.Environment
 import com.kickstarter.libs.utils.CodeVerifier
 import com.kickstarter.libs.utils.PKCE
 import com.kickstarter.libs.utils.Secrets
+import com.kickstarter.libs.utils.Secrets.WebEndpoint
+import com.kickstarter.models.User
+import com.kickstarter.services.ApiException
+import com.kickstarter.viewmodels.usecases.LoginUseCase
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.rx2.asFlow
 import timber.log.Timber
 
 /**
  * UiState for the OAuthScreen.
  *  @param authorizationUrl = Url to be loaded withing the ChromeTabs with all PKCE params
- *  @param code = code retrieved from the redirect deeplink, once the user has logged in successfully on ChromeTabs
+ *  @param user = User object retrieve after obtaining the token
+ *  @param isAuthorizationStep indicates whether or not the ChromeTabs have been loaded with authorizationUrl
+ *  @param error if any error happens at any step
  */
 data class OAuthUiState(
     val authorizationUrl: String = "",
-    val code: String = "",
+    val user: User? = null,
     val isAuthorizationStep: Boolean = false,
-    val isTokenRetrieveStep: Boolean = false
+    val error: String = ""
 )
 class OAuthViewModel(
     private val environment: Environment,
@@ -35,10 +45,17 @@ class OAuthViewModel(
 ) : ViewModel() {
 
     private val hostEndpoint = environment.webEndpoint()
-    private val clientID = if (hostEndpoint == ApiEndpoint.PRODUCTION.name) Secrets.Api.Client.PRODUCTION else Secrets.Api.Client.STAGING
-    private val codeVerifier = verifier.generateRandomCodeVerifier(entropy = CodeVerifier.MAX_CODE_VERIFIER_ENTROPY)
+    private val loginUseCase = LoginUseCase(environment)
+    private val apiClient = requireNotNull(environment.apiClientV2())
+    private val clientID = when (hostEndpoint) {
+        WebEndpoint.PRODUCTION -> Secrets.Api.Client.PRODUCTION
+        WebEndpoint.STAGING -> Secrets.Api.Client.STAGING
+        else -> ""
+    }
+    private val codeVerifier = verifier.generateRandomCodeVerifier(entropy = CodeVerifier.MIN_CODE_VERIFIER_ENTROPY)
 
     private var mutableUIState = MutableStateFlow(OAuthUiState())
+
     val uiState: StateFlow<OAuthUiState>
         get() = mutableUIState.asStateFlow()
             .stateIn(
@@ -46,6 +63,8 @@ class OAuthViewModel(
                 started = SharingStarted.WhileSubscribed(),
                 initialValue = OAuthUiState()
             )
+
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun produceState(intent: Intent) {
         viewModelScope.launch {
             val uri = Uri.parse(intent.data.toString())
@@ -53,16 +72,49 @@ class OAuthViewModel(
             val host = uri.host
             val code = uri.getQueryParameter("code")
 
-            if (scheme == REDIRECT_URI_SCHEMA && host == REDIRECT_URI_HOST && code != null) {
-                Timber.d("isTokenRetrieveStep after redirectionDeeplink: $code")
+            if (scheme == REDIRECT_URI_SCHEMA && host == REDIRECT_URI_HOST && !code.isNullOrBlank()) {
+                Timber.d("retrieve token after redirectionDeeplink: $code")
+                apiClient.loginWithCodes(codeVerifier, code, clientID)
+                    .asFlow()
+                    .flatMapLatest { token ->
+                        Timber.d("About to persist token to currentUser: $token")
+                        loginUseCase.setToken(token.accessToken())
+                        apiClient.fetchCurrentUser()
+                            .asFlow()
+                            .map {
+                                it
+                            }
+                    }
+                    .catch {
+                        Timber.e("error while getting the token or user: $it")
+                        mutableUIState.emit(
+                            OAuthUiState(
+                                error = processThrowable(it),
+                                user = null
+                            )
+                        )
+                        loginUseCase.logout()
+                    }
+                    .collect { user ->
+                        Timber.d("About to persist user to currentUser: $user")
+                        loginUseCase.setUser(user)
+                        mutableUIState.emit(
+                            OAuthUiState(
+                                user = user,
+                            )
+                        )
+                    }
+            }
+
+            if (scheme == REDIRECT_URI_SCHEMA && host == REDIRECT_URI_HOST && code.isNullOrBlank()) {
+                val error = "No code after redirection"
+                Timber.e(error)
                 mutableUIState.emit(
                     OAuthUiState(
-                        code = code,
-                        isTokenRetrieveStep = true,
-                        isAuthorizationStep = false
+                        error = error,
+                        user = null
                     )
                 )
-                // TODO: will call with code and code_challenge once the backend is ready to call the tokenEndpoint
             }
 
             if (intent.data == null) {
@@ -72,12 +124,22 @@ class OAuthViewModel(
                     OAuthUiState(
                         authorizationUrl = url,
                         isAuthorizationStep = true,
-                        isTokenRetrieveStep = false
                     )
                 )
             }
         }
     }
+
+    private fun processThrowable(throwable: Throwable): String {
+        if (!throwable.message.isNullOrBlank()) return throwable.message ?: ""
+
+        if (throwable is ApiException) {
+            return throwable.errorEnvelope().errorMessages().toString()
+        }
+
+        return "error while getting the token or user"
+    }
+
     private fun generateAuthorizationUrlWithParams(): String {
         val authParams = mapOf(
             "redirect_uri" to REDIRECT_URI_SCHEMA,
