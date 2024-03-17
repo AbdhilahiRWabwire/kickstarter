@@ -1,13 +1,16 @@
 package com.kickstarter.ui.activities
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.annotation.StringRes
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.lifecycle.lifecycleScope
 import com.facebook.AccessToken
 import com.kickstarter.R
 import com.kickstarter.libs.ActivityRequestCodes
@@ -20,7 +23,9 @@ import com.kickstarter.libs.utils.extensions.addToDisposable
 import com.kickstarter.libs.utils.extensions.coalesceWithV2
 import com.kickstarter.libs.utils.extensions.getEnvironment
 import com.kickstarter.libs.utils.extensions.getResetPasswordIntent
+import com.kickstarter.libs.utils.extensions.isNotNull
 import com.kickstarter.libs.utils.extensions.showAlertDialog
+import com.kickstarter.models.chrome.ChromeTabsHelper
 import com.kickstarter.services.apiresponses.ErrorEnvelope.FacebookUser
 import com.kickstarter.ui.IntentKey
 import com.kickstarter.ui.SharedPreferenceKey
@@ -32,9 +37,13 @@ import com.kickstarter.ui.extensions.startDisclaimerChromeTab
 import com.kickstarter.ui.extensions.startLogin
 import com.kickstarter.ui.extensions.startSignup
 import com.kickstarter.viewmodels.LoginToutViewModel
+import com.kickstarter.viewmodels.OAuthViewModel
+import com.kickstarter.viewmodels.OAuthViewModelFactory
 import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
+import kotlinx.coroutines.launch
+import timber.log.Timber
 
 class LoginToutActivity : ComponentActivity() {
 
@@ -51,18 +60,30 @@ class LoginToutActivity : ComponentActivity() {
 
     private val disposables = CompositeDisposable()
 
+    private lateinit var oAuthViewModelFactory: OAuthViewModelFactory
+    private val oAuthViewModel: OAuthViewModel by viewModels {
+        oAuthViewModelFactory
+    }
+
+    private val oAuthLogcat = "OAuth: "
+
+    var oauthFlagEnabled: Boolean = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         var darkModeEnabled = false
+
         this.getEnvironment()?.let { env ->
             environment = env
             viewModelFactory = LoginToutViewModel.Factory(env)
+            oAuthViewModelFactory = OAuthViewModelFactory(environment = env)
             this.ksString = requireNotNull(env.ksString())
             darkModeEnabled =
                 env.featureFlagClient()?.getBoolean(FlagKey.ANDROID_DARK_MODE_ENABLED) ?: false
             theme = env.sharedPreferences()
                 ?.getInt(SharedPreferenceKey.APP_THEME, AppThemes.MATCH_SYSTEM.ordinal)
                 ?: AppThemes.MATCH_SYSTEM.ordinal
+            oauthFlagEnabled = env.featureFlagClient()?.getBoolean(FlagKey.ANDROID_OAUTH) ?: false
         }
 
         setContent {
@@ -93,11 +114,29 @@ class LoginToutActivity : ComponentActivity() {
                     onCookiePolicyClicked = { viewModel.inputs.disclaimerItemClicked(DisclaimerItems.COOKIES) },
                     onHelpClicked = {
                         viewModel.inputs.disclaimerItemClicked(DisclaimerItems.HELP)
+                    },
+                    featureFlagState = oauthFlagEnabled,
+                    onSignUpOrLogInClicked = {
+                        oAuthViewModel.produceState(intent = intent)
                     }
                 )
             }
         }
 
+        logInAndSignUpAndLoginWithFacebookVM()
+
+        if (oauthFlagEnabled) {
+            setUpOAuthViewModel()
+        }
+    }
+
+    /***
+     * Handles the the viewModel RXJava subscriptions for the user cases:
+     * - LogIn non OAuth
+     * - SignUp non OAuth
+     * - LogIn with Facebook
+     */
+    private fun logInAndSignUpAndLoginWithFacebookVM() {
         val loginReason = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getSerializableExtra(IntentKey.LOGIN_REASON, LoginReason::class.java)
         } else {
@@ -116,14 +155,14 @@ class LoginToutActivity : ComponentActivity() {
         viewModel.outputs.startLoginActivity()
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe {
-                this.startLogin(it)
+                this.startLogin()
             }
             .addToDisposable(disposables)
 
         viewModel.outputs.startSignupActivity()
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe {
-                this.startSignup(it)
+                this.startSignup()
             }
             .addToDisposable(disposables)
 
@@ -201,6 +240,45 @@ class LoginToutActivity : ComponentActivity() {
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe { finishWithSuccessfulResult() }
             .addToDisposable(disposables)
+    }
+
+    override fun onDestroy() {
+        Timber.d("$oAuthLogcat onDestroy")
+        super.onDestroy()
+    }
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (oauthFlagEnabled) {
+            Timber.d("$oAuthLogcat onNewIntent Intent: $intent, data: ${intent?.data}")
+            // - Intent generated when the deepLink redirection takes place
+            intent?.let { oAuthViewModel.produceState(intent = it) }
+        }
+    }
+
+    private fun setUpOAuthViewModel() {
+        lifecycleScope.launch {
+            oAuthViewModel.uiState.collect { state ->
+                // - Intent generated with onCreate
+                if (state.isAuthorizationStep && state.authorizationUrl.isNotEmpty()) {
+                    openChromeTabWithUrl(state.authorizationUrl)
+                }
+
+                if (state.user.isNotNull()) {
+                    setResult(RESULT_OK)
+                    this@LoginToutActivity.finish()
+                }
+            }
+        }
+    }
+
+    private fun openChromeTabWithUrl(url: String) {
+        val authorizationUri = Uri.parse(url)
+
+        val tabIntent = CustomTabsIntent.Builder().build()
+
+        val packageName = ChromeTabsHelper.getPackageNameToUse(this)
+        tabIntent.intent.setPackage(packageName)
+        tabIntent.launchUrl(this, authorizationUri)
     }
 
     private fun facebookLoginClick() =
