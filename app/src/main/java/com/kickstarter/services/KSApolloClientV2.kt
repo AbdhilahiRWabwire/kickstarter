@@ -44,6 +44,7 @@ import com.apollographql.apollo.ApolloCall
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.api.Response
 import com.apollographql.apollo.exception.ApolloException
+import com.google.android.gms.common.util.Base64Utils
 import com.google.gson.Gson
 import com.kickstarter.libs.utils.extensions.isNotNull
 import com.kickstarter.models.Backing
@@ -90,8 +91,10 @@ import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.PublishSubject
 import type.BackingState
 import type.CurrencyCode
-import type.FlaggingKind
+import type.NonDeprecatedFlaggingKind
 import type.PaymentTypes
+import type.StripeIntentContextTypes
+import java.nio.charset.Charset
 
 interface ApolloClientTypeV2 {
     fun getProject(project: Project): Observable<Project>
@@ -232,7 +235,12 @@ class KSApolloClientV2(val service: ApolloClient, val gson: Gson) : ApolloClient
         return Observable.defer {
             val createSetupIntentMut = CreateSetupIntentMutation.builder()
                 .apply {
-                    if (project != null) this.projectId(encodeRelayId(project))
+                    project?.let {
+                        this.projectId(encodeRelayId(it))
+                        this.setupIntentContext(StripeIntentContextTypes.CROWDFUNDING_CHECKOUT)
+                    } ?: run {
+                        this.setupIntentContext(StripeIntentContextTypes.PROFILE_SETTINGS)
+                    }
                 }
                 .build()
 
@@ -315,6 +323,7 @@ class KSApolloClientV2(val service: ApolloClient, val gson: Gson) : ApolloClient
                                         .id(cardData.id())
                                         .lastFourDigits(cardData.lastFour())
                                         .type(it.type())
+                                        .stripeCardId(it.stripeCardId())
                                         .build()
                                     cardsList.add(card)
                                 }
@@ -362,7 +371,7 @@ class KSApolloClientV2(val service: ApolloClient, val gson: Gson) : ApolloClient
         return Observable.defer {
             project?.let {
                 val ps = PublishSubject.create<String>()
-                val flagging = FlaggingKind.safeValueOf(flaggingKind)
+                val flagging = NonDeprecatedFlaggingKind.safeValueOf(flaggingKind)
                 val mutation = CreateFlaggingMutation.builder()
                     .contentId(encodeRelayId(it))
                     .details(details)
@@ -1493,6 +1502,7 @@ class KSApolloClientV2(val service: ApolloClient, val gson: Gson) : ApolloClient
                 CreatePaymentIntentMutation.builder()
                     .projectId(encodeRelayId(createPaymentIntentInput.project))
                     .amount(createPaymentIntentInput.amount)
+                    .paymentIntentContext(StripeIntentContextTypes.POST_CAMPAIGN_CHECKOUT)
                     .build()
             ).enqueue(object : ApolloCall.Callback<CreatePaymentIntentMutation.Data>() {
                 override fun onFailure(e: ApolloException) {
@@ -1562,7 +1572,7 @@ class KSApolloClientV2(val service: ApolloClient, val gson: Gson) : ApolloClient
 
             this.service.mutate(
                 CompleteOnSessionCheckoutMutation.builder()
-                    .checkoutId(checkoutId)
+                    .checkoutId(Base64Utils.encodeUrlSafe(("Checkout-$checkoutId").toByteArray(Charset.defaultCharset())))
                     .paymentIntentClientSecret(paymentIntentClientSecret)
                     .paymentSourceId(paymentSourceId)
                     .build()

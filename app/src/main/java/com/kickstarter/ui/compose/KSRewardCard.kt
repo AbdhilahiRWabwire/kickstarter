@@ -118,6 +118,7 @@ fun KSRewardCard(
                 Modifier
                     .verticalScroll(rememberScrollState())
                     .padding(dimensions.paddingMediumLarge)
+                    .weight(weight = 1f, fill = false)
             ) {
 
                 if (!amount.isNullOrEmpty()) {
