@@ -9,6 +9,7 @@ import android.app.Activity
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Rect
+import android.net.Uri
 import android.os.Bundle
 import android.util.Pair
 import android.view.MotionEvent
@@ -45,19 +46,24 @@ import com.kickstarter.databinding.ActivityProjectPageBinding
 import com.kickstarter.libs.ActivityRequestCodes
 import com.kickstarter.libs.BaseFragment
 import com.kickstarter.libs.Either
+import com.kickstarter.libs.Environment
 import com.kickstarter.libs.KSString
 import com.kickstarter.libs.MessagePreviousScreenType
 import com.kickstarter.libs.ProjectPagerTabs
 import com.kickstarter.libs.featureflag.FlagKey
 import com.kickstarter.libs.rx.transformers.Transformers
 import com.kickstarter.libs.utils.ApplicationUtils
+import com.kickstarter.libs.utils.UrlUtils
 import com.kickstarter.libs.utils.ViewUtils
 import com.kickstarter.libs.utils.extensions.addToDisposable
 import com.kickstarter.libs.utils.extensions.getEnvironment
+import com.kickstarter.libs.utils.extensions.getPaymentSheetConfiguration
 import com.kickstarter.libs.utils.extensions.showLatePledgeFlow
 import com.kickstarter.libs.utils.extensions.toVisibility
 import com.kickstarter.models.Project
 import com.kickstarter.models.Reward
+import com.kickstarter.models.StoredCard
+import com.kickstarter.models.chrome.ChromeTabsHelperActivity
 import com.kickstarter.ui.IntentKey
 import com.kickstarter.ui.activities.compose.projectpage.ProjectPledgeButtonAndFragmentContainer
 import com.kickstarter.ui.adapters.ProjectPagerAdapter
@@ -66,13 +72,16 @@ import com.kickstarter.ui.data.ActivityResult.Companion.create
 import com.kickstarter.ui.data.CheckoutData
 import com.kickstarter.ui.data.LoginReason
 import com.kickstarter.ui.data.PledgeData
+import com.kickstarter.ui.data.PledgeFlowContext
 import com.kickstarter.ui.data.PledgeReason
 import com.kickstarter.ui.data.ProjectData
 import com.kickstarter.ui.extensions.finishWithAnimation
 import com.kickstarter.ui.extensions.hideKeyboard
 import com.kickstarter.ui.extensions.selectPledgeFragment
 import com.kickstarter.ui.extensions.setUpConnectivityStatusCheck
+import com.kickstarter.ui.extensions.showErrorToast
 import com.kickstarter.ui.extensions.showSnackbar
+import com.kickstarter.ui.extensions.startDisclaimerChromeTab
 import com.kickstarter.ui.extensions.startRootCommentsActivity
 import com.kickstarter.ui.extensions.startUpdatesActivity
 import com.kickstarter.ui.extensions.startVideoActivity
@@ -87,11 +96,20 @@ import com.kickstarter.viewmodels.projectpage.LatePledgeCheckoutViewModel
 import com.kickstarter.viewmodels.projectpage.PagerTabConfig
 import com.kickstarter.viewmodels.projectpage.ProjectPageViewModel
 import com.kickstarter.viewmodels.projectpage.RewardsSelectionViewModel
+import com.stripe.android.ApiResultCallback
+import com.stripe.android.PaymentIntentResult
+import com.stripe.android.Stripe
+import com.stripe.android.StripeIntentResult
+import com.stripe.android.paymentsheet.PaymentSheet
+import com.stripe.android.paymentsheet.PaymentSheetResult
+import com.stripe.android.paymentsheet.model.PaymentOption
 import com.stripe.android.view.CardInputWidget
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.schedulers.Schedulers
 import kotlinx.coroutines.launch
+import timber.log.Timber
+import type.CreditCardPaymentType
 
 class ProjectPageActivity :
     AppCompatActivity(),
@@ -106,7 +124,7 @@ class ProjectPageActivity :
     private lateinit var checkoutViewModelFactory: CheckoutFlowViewModel.Factory
     private val checkoutFlowViewModel: CheckoutFlowViewModel by viewModels { checkoutViewModelFactory }
 
-    private val rewardsSelectionViewModelFactory = RewardsSelectionViewModel.Factory()
+    private lateinit var rewardsSelectionViewModelFactory: RewardsSelectionViewModel.Factory
     private val rewardsSelectionViewModel: RewardsSelectionViewModel by viewModels { rewardsSelectionViewModelFactory }
 
     private lateinit var confirmDetailsViewModelFactory: ConfirmDetailsViewModel.Factory
@@ -117,6 +135,9 @@ class ProjectPageActivity :
 
     private lateinit var addOnsViewModelFactory: AddOnsViewModel.Factory
     private val addOnsViewModel: AddOnsViewModel by viewModels { addOnsViewModelFactory }
+
+    private lateinit var stripe: Stripe
+    private lateinit var flowController: PaymentSheet.FlowController
 
     private val projectShareLabelString = R.string.project_accessibility_button_share_label
     private val projectShareCopyString = R.string.project_share_twitter_message
@@ -153,11 +174,19 @@ class ProjectPageActivity :
         val environment = this.getEnvironment()?.let { env ->
             viewModelFactory = ProjectPageViewModel.Factory(env)
             checkoutViewModelFactory = CheckoutFlowViewModel.Factory(env)
+            rewardsSelectionViewModelFactory = RewardsSelectionViewModel.Factory(env)
             confirmDetailsViewModelFactory = ConfirmDetailsViewModel.Factory(env)
             addOnsViewModelFactory = AddOnsViewModel.Factory(env)
             latePledgeCheckoutViewModelFactory = LatePledgeCheckoutViewModel.Factory(env)
+            stripe = requireNotNull(env.stripe())
             env
         }
+
+        flowController = PaymentSheet.FlowController.create(
+            activity = this,
+            paymentOptionCallback = ::onPaymentOption,
+            paymentResultCallback = ::onPaymentSheetResult
+        )
 
         this.ksString = requireNotNull(environment?.ksString())
 
@@ -477,11 +506,12 @@ class ProjectPageActivity :
                     val currentPage = flowUIState.currentPage
 
                     val rewardSelectionUIState by rewardsSelectionViewModel.rewardSelectionUIState.collectAsStateWithLifecycle()
-
                     val projectData = rewardSelectionUIState.project
                     val indexOfBackedReward = rewardSelectionUIState.initialRewardIndex
                     val rewardsList = rewardSelectionUIState.rewardList
                     val showRewardCarouselAlertDialog = rewardSelectionUIState.showAlertDialog
+                    val selectedReward = rewardSelectionUIState.selectedReward
+                    rewardsSelectionViewModel.sendEvent(expanded, currentPage, projectData)
 
                     LaunchedEffect(Unit) {
                         rewardsSelectionViewModel.flowUIRequest.collect {
@@ -496,9 +526,14 @@ class ProjectPageActivity :
                     val selectedAddOnsMap: MutableMap<Reward, Int> = addOnsUIState.currentAddOnsSelection
                     val addOns = addOnsUIState.addOns
                     val shippingRules = addOnsUIState.shippingRules
+                    val addOnsIsLoading = addOnsUIState.isLoading
 
                     LaunchedEffect(currentUserShippingRule) {
                         confirmDetailsViewModel.provideCurrentShippingRule(currentUserShippingRule)
+                    }
+
+                    addOnsViewModel.provideErrorAction { message ->
+                        showToastError(message)
                     }
 
                     val confirmUiState by confirmDetailsViewModel.confirmDetailsUIState.collectAsStateWithLifecycle()
@@ -510,6 +545,7 @@ class ProjectPageActivity :
                     val totalBonusSupportAmount = confirmUiState.totalBonusSupportAmount
                     val maxPledgeAmount = confirmUiState.maxPledgeAmount
                     val minStepAmount = confirmUiState.minStepAmount
+                    val confirmDetailsIsLoading = confirmUiState.isLoading
 
                     val checkoutPayment by confirmDetailsViewModel.checkoutPayment.collectAsStateWithLifecycle()
 
@@ -520,10 +556,41 @@ class ProjectPageActivity :
                         latePledgeCheckoutViewModel.provideCheckoutId(checkoutPayment.id)
                     }
 
+                    confirmDetailsViewModel.provideErrorAction { message ->
+                        showToastError(message)
+                    }
+
                     val latePledgeCheckoutUIState by latePledgeCheckoutViewModel.latePledgeCheckoutUIState.collectAsStateWithLifecycle()
 
                     val userStoredCards = latePledgeCheckoutUIState.storeCards
                     val userEmail = latePledgeCheckoutUIState.userEmail
+                    val checkoutLoading = latePledgeCheckoutUIState.isLoading
+
+                    LaunchedEffect(Unit) {
+                        latePledgeCheckoutViewModel.paymentRequiresAction.collect {
+                            stripeNextAction(it)
+                        }
+                    }
+
+                    latePledgeCheckoutViewModel.provideErrorAction { message ->
+                        showToastError(message)
+                    }
+
+                    LaunchedEffect(Unit) {
+                        latePledgeCheckoutViewModel.clientSecretForNewPaymentMethod.collect {
+                            flowControllerPresentPaymentOption(it)
+                        }
+                    }
+
+                    LaunchedEffect(Unit) {
+                        latePledgeCheckoutViewModel.paymentRequiresAction.collect {
+                            stripeNextAction(it)
+                        }
+                    }
+
+                    latePledgeCheckoutViewModel.provideErrorAction { message ->
+                        showToastError(message)
+                    }
 
                     val pagerState = rememberPagerState(initialPage = 0, pageCount = { 4 })
 
@@ -543,10 +610,19 @@ class ProjectPageActivity :
                                     easing = FastOutSlowInEasing
                                 )
                             )
+
+                            if (currentPage == 3) {
+                                latePledgeCheckoutViewModel.sendPageViewedEvent(
+                                    projectData,
+                                    addOns,
+                                    currentUserShippingRule,
+                                    shippingAmount,
+                                    totalAmount,
+                                    totalBonusSupportAmount
+                                )
+                            }
                         }
                     }
-
-                    var selectedReward: Reward? = null
 
                     ProjectPledgeButtonAndFragmentContainer(
                         expanded = expanded,
@@ -555,6 +631,7 @@ class ProjectPageActivity :
                             checkoutFlowViewModel.onBackPressed(pagerState.currentPage)
                         },
                         pagerState = pagerState,
+                        isLoading = addOnsIsLoading || confirmDetailsIsLoading || checkoutLoading,
                         onAddOnsContinueClicked = {
                             checkoutFlowViewModel.onAddOnsContinueClicked()
                         },
@@ -574,11 +651,11 @@ class ProjectPageActivity :
                         addOns = addOns,
                         project = projectData.project(),
                         onRewardSelected = { reward ->
-                            selectedReward = reward
                             checkoutFlowViewModel.userRewardSelection(reward)
                             addOnsViewModel.userRewardSelection(reward)
                             rewardsSelectionViewModel.onUserRewardSelection(reward)
                             confirmDetailsViewModel.onUserSelectedReward(reward)
+                            latePledgeCheckoutViewModel.userRewardSelection(reward)
                         },
                         onAddOnAddedOrRemoved = { updateAddOnRewardCount ->
                             selectedAddOnsMap[updateAddOnRewardCount.keys.first()] =
@@ -611,13 +688,62 @@ class ProjectPageActivity :
                         onBonusSupportPlusClicked = { confirmDetailsViewModel.incrementBonusSupport() },
                         selectedAddOnsMap = selectedAddOnsMap,
                         onPledgeCtaClicked = { selectedCard ->
-                            latePledgeCheckoutViewModel.onPledgeButtonClicked(selectedCard = selectedCard, project = projectData.project(), totalAmount = totalAmount)
+                            selectedCard?.apply {
+                                latePledgeCheckoutViewModel.sendSubmitCTAEvent(projectData, addOns, currentUserShippingRule, shippingAmount, totalAmount, totalBonusSupportAmount)
+                                latePledgeCheckoutViewModel.onPledgeButtonClicked(selectedCard = selectedCard, project = projectData.project(), totalAmount = totalAmount)
+                            }
                         },
                         onAddPaymentMethodClicked = {
+                            latePledgeCheckoutViewModel.onAddNewCardClicked(project = projectData.project(), totalAmount = totalAmount)
+                        },
+                        onDisclaimerItemClicked = { disclaimerItem ->
+                            getEnvironment()?.let { environment ->
+                                showDisclaimerScreen(disclaimerItem, environment)
+                            } ?: run {
+                                showToastError()
+                            }
+                        },
+                        onAccountabilityLinkClicked = {
+                            showAccountabilityPage()
                         }
                     )
+
+                    val successfulPledge = latePledgeCheckoutViewModel.onPledgeSuccess.collectAsStateWithLifecycle(initialValue = false).value
+
+                    LaunchedEffect(successfulPledge) {
+                        if (successfulPledge) {
+                            latePledgeCheckoutViewModel.onPledgeSuccess.collect {
+                                val checkoutData = CheckoutData.builder()
+                                    .amount(totalAmount)
+                                    .id(checkoutPayment.id)
+                                    .paymentType(CreditCardPaymentType.CREDIT_CARD)
+                                    .bonusAmount(totalBonusSupportAmount)
+                                    .shippingAmount(shippingAmount)
+                                    .build()
+                                val pledgeData = PledgeData.with(PledgeFlowContext.forPledgeReason(PledgeReason.PLEDGE), projectData, selectedReward)
+                                showCreatePledgeSuccess(Pair(checkoutData, pledgeData), userEmail)
+                                checkoutFlowViewModel.onProjectSuccess()
+                                refreshProject()
+                                binding.pledgeContainerCompose.isGone = true
+                                binding.pledgeContainerLayout.pledgeContainerRoot.isGone = false
+                            }
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    private fun showDisclaimerScreen(disclaimerItem: DisclaimerItems, environment: Environment) {
+        startDisclaimerChromeTab(disclaimerItem, environment)
+    }
+
+    private fun showAccountabilityPage() {
+        getEnvironment()?.webEndpoint()?.let { endpoint ->
+            val trustUrl = UrlUtils.appendPath(endpoint, "trust")
+            ChromeTabsHelperActivity.openCustomTab(this, UrlUtils.baseCustomTabsIntent(this), Uri.parse(trustUrl), null)
+        } ?: run {
+            showToastError()
         }
     }
 
@@ -961,13 +1087,17 @@ class ProjectPageActivity :
         showSnackbar(binding.snackbarAnchor, getString(R.string.Youve_canceled_your_pledge))
     }
 
-    private fun showCreatePledgeSuccess(checkoutDatandProjectData: Pair<CheckoutData, PledgeData>) {
-        val checkoutData = checkoutDatandProjectData.first
-        val pledgeData = checkoutDatandProjectData.second
+    private fun showCreatePledgeSuccess(checkoutDataAndProjectData: Pair<CheckoutData, PledgeData>, email: String = "") {
+        val checkoutData = checkoutDataAndProjectData.first
+        val pledgeData = checkoutDataAndProjectData.second
         val projectData = pledgeData.projectData()
-        if (clearFragmentBackStack()) {
+
+        val fFLatePledge = getEnvironment()?.featureFlagClient()?.getBoolean(FlagKey.ANDROID_POST_CAMPAIGN_PLEDGES) ?: false
+
+        if (clearFragmentBackStack() || (projectData.project().showLatePledgeFlow() && fFLatePledge)) {
             startActivity(
                 Intent(this, ThanksActivity::class.java)
+                    .putExtra(IntentKey.EMAIL, email)
                     .putExtra(IntentKey.PROJECT, projectData.project())
                     .putExtra(IntentKey.CHECKOUT_DATA, checkoutData)
                     .putExtra(IntentKey.PLEDGE_DATA, pledgeData)
@@ -1085,9 +1215,96 @@ class ProjectPageActivity :
         }
     }
 
+    // Update the UI with the returned PaymentOption
+    private fun onPaymentOption(paymentOption: PaymentOption?) {
+        paymentOption?.let {
+            val storedCard = StoredCard.Builder(
+                lastFourDigits = paymentOption.label.takeLast(4),
+                resourceId = paymentOption.drawableResourceId,
+                clientSetupId = "-1"
+            ).build()
+            latePledgeCheckoutViewModel.onNewCardSuccessfullyAdded(storedCard)
+            Timber.d(" ${this.javaClass.canonicalName} onPaymentOption with ${storedCard.lastFourDigits()} and ${storedCard.clientSetupId()}")
+            flowController.confirm()
+        }
+    }
+
+    private fun onPaymentSheetResult(paymentSheetResult: PaymentSheetResult) {
+        when (paymentSheetResult) {
+            is PaymentSheetResult.Canceled -> {
+                showErrorToast(
+                    applicationContext,
+                    binding.pledgeContainerCompose,
+                    getString(R.string.general_error_oops)
+                )
+            }
+
+            is PaymentSheetResult.Failed -> {
+                val errorMessage = paymentSheetResult.error.localizedMessage ?: getString(R.string.general_error_something_wrong)
+                showErrorToast(
+                    applicationContext,
+                    binding.pledgeContainerCompose,
+                    errorMessage
+                )
+            }
+
+            is PaymentSheetResult.Completed -> {
+            }
+        }
+    }
+
+    private fun stripeNextAction(it: String) {
+        try {
+            // - PaymentIntent format
+            if (it.contains("pi_")) {
+                stripe.handleNextActionForPayment(this, it)
+            } else {
+                // - SetupIntent format
+                stripe.handleNextActionForSetupIntent(this, it)
+            }
+        } catch (exception: Exception) {
+            FirebaseCrashlytics.getInstance().recordException(exception)
+        }
+    }
+
+    private fun flowControllerPresentPaymentOption(clientSecret: String) {
+        flowController.configureWithPaymentIntent(
+            paymentIntentClientSecret = clientSecret,
+            configuration = getPaymentSheetConfiguration(),
+            callback = ::onConfigured
+        )
+    }
+
+    // error is not used by is needed in the callback object
+    private fun onConfigured(success: Boolean, error: Throwable?) {
+        if (success) {
+            flowController.presentPaymentOptions()
+        } else {
+            showToastError()
+        }
+    }
+
+    private fun showToastError(message: String? = null) {
+        showErrorToast(applicationContext, binding.pledgeContainerCompose, message ?: getString(R.string.general_error_something_wrong))
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, intent: Intent?) {
         super.onActivityResult(requestCode, resultCode, intent)
         viewModel.activityResult(create(requestCode, resultCode, intent))
+        stripe.onPaymentResult(
+            requestCode, intent,
+            object : ApiResultCallback<PaymentIntentResult> {
+                override fun onSuccess(result: PaymentIntentResult) {
+                    if (result.outcome == StripeIntentResult.Outcome.SUCCEEDED) {
+                        // Go to thanks page
+                    } else showToastError()
+                }
+
+                override fun onError(e: Exception) {
+                    showToastError()
+                }
+            }
+        )
     }
 
     override fun onDestroy() {

@@ -1,10 +1,14 @@
 package com.kickstarter.ui.activities.compose.projectpage
 
 import android.content.res.Configuration
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
@@ -14,6 +18,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.Scaffold
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -32,6 +37,7 @@ import com.kickstarter.mock.factories.RewardsItemFactory
 import com.kickstarter.models.Project
 import com.kickstarter.models.Reward
 import com.kickstarter.ui.compose.KSRewardCard
+import com.kickstarter.ui.compose.designsystem.KSCircularProgressIndicator
 import com.kickstarter.ui.compose.designsystem.KSTheme
 import org.joda.time.DateTime
 import java.math.RoundingMode
@@ -89,6 +95,7 @@ fun RewardCarouselScreen(
     environment: Environment,
     rewards: List<Reward>,
     project: Project,
+    isLoading: Boolean = false,
     onRewardSelected: (reward: Reward) -> Unit
 ) {
     val context = LocalContext.current
@@ -137,19 +144,24 @@ fun RewardCarouselScreen(
             ) { reward ->
 
                 val ctaButtonEnabled = when {
+                    RewardUtils.isNoReward(reward) && (project.postCampaignPledgingEnabled() ?: false && project.isInPostCampaignPledgingPhase() ?: false) -> true
                     !reward.hasAddons() && project.backing()?.isBacked(reward) != true -> true
                     project.backing()?.rewardId() != reward.id() && RewardUtils.isAvailable(
                         project,
                         reward
-                    ) -> true
+                    ) && reward.isAvailable() -> true
 
                     reward.hasAddons() && project.backing()
-                        ?.rewardId() == reward.id() && (project.isLive || (project.postCampaignPledgingEnabled() ?: false && project.isInPostCampaignPledgingPhase() ?: false)) -> true
+                        ?.rewardId() == reward.id() && (project.isLive || (project.postCampaignPledgingEnabled() ?: false && project.isInPostCampaignPledgingPhase() ?: false)) && reward.isAvailable() -> true
 
                     else -> false
                 }
                 val isBacked = project.backing()?.isBacked(reward) ?: false
-                val ctaButtonText = RewardViewUtils.pledgeButtonText(project, reward)
+
+                val ctaButtonText = when {
+                    ctaButtonEnabled -> R.string.Select
+                    else -> R.string.No_longer_available
+                }
 
                 val remaining = reward.remaining() ?: -1
 
@@ -175,14 +187,15 @@ fun RewardCarouselScreen(
                                 it
                             ).toString()
                         },
-                        conversion = environment.ksCurrency()?.let {
-                            it.format(
+                        conversion = if (project.currentCurrency() == project.currency()) "" else {
+                            val conversionAmount = environment.ksCurrency()?.format(
                                 reward.convertedMinimum(),
                                 project,
                                 true,
                                 RoundingMode.HALF_UP,
                                 true
                             )
+                            environment.ksString()?.format(stringResource(id = R.string.About_reward_amount), "reward_amount", conversionAmount)
                         },
                         description = reward.description(),
                         title = reward.title(),
@@ -264,6 +277,18 @@ fun RewardCarouselScreen(
                         addonsPillVisible = reward.hasAddons()
                     )
                 }
+            }
+        }
+
+        if (isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(KSTheme.colors.backgroundAccentGraySubtle.copy(alpha = 0.5f))
+                    .clickable(enabled = false) { },
+                contentAlignment = Alignment.Center
+            ) {
+                KSCircularProgressIndicator()
             }
         }
     }

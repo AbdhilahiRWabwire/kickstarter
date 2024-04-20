@@ -1,6 +1,10 @@
 package com.kickstarter.viewmodels
 
 import com.kickstarter.KSRobolectricTestCase
+import com.kickstarter.libs.Environment
+import com.kickstarter.libs.utils.EventName
+import com.kickstarter.mock.factories.ProjectDataFactory
+import com.kickstarter.mock.factories.ProjectFactory
 import com.kickstarter.models.Backing
 import com.kickstarter.models.Project
 import com.kickstarter.models.Reward
@@ -19,9 +23,9 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
 
     private lateinit var viewModel: RewardsSelectionViewModel
 
-    private fun createViewModel() {
+    private fun createViewModel(environment: Environment = environment()) {
         viewModel =
-            RewardsSelectionViewModel.Factory().create(RewardsSelectionViewModel::class.java)
+            RewardsSelectionViewModel.Factory(environment).create(RewardsSelectionViewModel::class.java)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -97,6 +101,8 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
             flowState.last(),
             FlowUIState(currentPage = 1, expanded = true)
         )
+
+        this@RewardsSelectionViewModelTest.segmentTrack.assertValue(EventName.CTA_CLICKED.eventName)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -141,6 +147,8 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
             flowState.last(),
             FlowUIState(currentPage = 2, expanded = true)
         )
+
+        this@RewardsSelectionViewModelTest.segmentTrack.assertValue(EventName.CTA_CLICKED.eventName)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -189,6 +197,8 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
             flowState.last(),
             FlowUIState(currentPage = 1, expanded = true)
         )
+
+        this@RewardsSelectionViewModelTest.segmentTrack.assertValue(EventName.CTA_CLICKED.eventName)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -237,6 +247,8 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
             flowState.last(),
             FlowUIState(currentPage = 1, expanded = true)
         )
+
+        this@RewardsSelectionViewModelTest.segmentTrack.assertValue(EventName.CTA_CLICKED.eventName)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -285,11 +297,13 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
             uiState.last(),
             RewardSelectionUIState(
                 rewardList = testRewards,
-                initialRewardIndex = 0,
+                initialRewardIndex = 3,
                 project = testProjectData,
                 showAlertDialog = true
             )
         )
+
+        this@RewardsSelectionViewModelTest.segmentTrack.assertValue(EventName.CTA_CLICKED.eventName)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -338,6 +352,8 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
             flowState.last(),
             FlowUIState(currentPage = 2, expanded = true)
         )
+
+        this@RewardsSelectionViewModelTest.segmentTrack.assertValue(EventName.CTA_CLICKED.eventName)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -389,11 +405,13 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
                 uiState.last(),
                 RewardSelectionUIState(
                     rewardList = testRewards,
-                    initialRewardIndex = 0,
+                    initialRewardIndex = 3,
                     project = testProjectData,
                     showAlertDialog = true
                 )
             )
+
+            this@RewardsSelectionViewModelTest.segmentTrack.assertValue(EventName.CTA_CLICKED.eventName)
         }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -444,7 +462,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
             uiState.last(),
             RewardSelectionUIState(
                 rewardList = testRewards,
-                initialRewardIndex = 0,
+                initialRewardIndex = 3,
                 project = testProjectData,
                 showAlertDialog = true
             )
@@ -458,6 +476,8 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
             flowState.last(),
             FlowUIState(currentPage = 1, expanded = true)
         )
+
+        this@RewardsSelectionViewModelTest.segmentTrack.assertValue(EventName.CTA_CLICKED.eventName)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -508,7 +528,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
             uiState.last(),
             RewardSelectionUIState(
                 rewardList = testRewards,
-                initialRewardIndex = 0,
+                initialRewardIndex = 3,
                 project = testProjectData,
                 showAlertDialog = true
             )
@@ -522,6 +542,8 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
             flowState.last(),
             FlowUIState(currentPage = 2, expanded = true)
         )
+
+        this@RewardsSelectionViewModelTest.segmentTrack.assertValue(EventName.CTA_CLICKED.eventName)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -572,7 +594,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
             uiState.last(),
             RewardSelectionUIState(
                 rewardList = testRewards,
-                initialRewardIndex = 0,
+                initialRewardIndex = 3,
                 project = testProjectData,
                 showAlertDialog = true
             )
@@ -586,10 +608,35 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
             uiState.last(),
             RewardSelectionUIState(
                 rewardList = testRewards,
-                initialRewardIndex = 0,
+                initialRewardIndex = 3,
                 project = testProjectData,
                 showAlertDialog = false
             )
         )
+
+        this@RewardsSelectionViewModelTest.segmentTrack.assertValue(EventName.CTA_CLICKED.eventName)
+    }
+
+    @Test
+    fun `test send analytic event trackRewardsCarouselViewed() when the currentPage is rewards and is expanded mode`() {
+        createViewModel()
+
+        val projectData = ProjectDataFactory.project(ProjectFactory.project())
+
+        viewModel.sendEvent(expanded = true, currentPage = 0, projectData)
+        this@RewardsSelectionViewModelTest.segmentTrack.assertValue(EventName.PAGE_VIEWED.eventName)
+    }
+
+    @Test
+    fun `test analytic event trackRewardsCarouselViewed() not sent when the currentPage is not rewards or not expanded`() {
+        createViewModel()
+
+        val projectData = ProjectDataFactory.project(ProjectFactory.project())
+
+        viewModel.sendEvent(expanded = true, currentPage = 1, projectData)
+        this@RewardsSelectionViewModelTest.segmentTrack.assertNoValues()
+
+        viewModel.sendEvent(expanded = false, currentPage = 0, projectData)
+        this@RewardsSelectionViewModelTest.segmentTrack.assertNoValues()
     }
 }
