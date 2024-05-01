@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.kickstarter.libs.Environment
+import com.kickstarter.libs.utils.RewardUtils
 import com.kickstarter.libs.utils.extensions.isBacked
 import com.kickstarter.mock.factories.RewardFactory
 import com.kickstarter.models.Backing
@@ -71,7 +72,7 @@ class RewardsSelectionViewModel(environment: Environment) : ViewModel() {
         viewModelScope.launch {
             val pledgeDataAndReason = pledgeDataAndPledgeReason(currentProjectData, reward)
             newUserReward = pledgeDataAndReason.first.reward()
-
+            emitCurrentState()
             analytics.trackSelectRewardCTA(pledgeDataAndReason.first)
 
             when (pledgeDataAndReason.second) {
@@ -176,12 +177,14 @@ class RewardsSelectionViewModel(environment: Environment) : ViewModel() {
     private suspend fun emitCurrentState(
         showAlertDialog: Boolean = false
     ) {
+        val filteredRewards = currentProjectData.project().rewards()?.filter { RewardUtils.isNoReward(it) || it.isAvailable() } ?: listOf()
         mutableRewardSelectionUIState.emit(
             RewardSelectionUIState(
-                rewardList = currentProjectData.project().rewards() ?: listOf(),
+                rewardList = filteredRewards,
                 initialRewardIndex = indexOfBackedReward,
                 project = currentProjectData,
                 showAlertDialog = showAlertDialog,
+                selectedReward = newUserReward
             )
         )
     }

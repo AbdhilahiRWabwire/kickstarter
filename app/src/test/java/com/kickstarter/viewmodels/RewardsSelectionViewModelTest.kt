@@ -33,7 +33,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
     fun test_providing_project_should_initialize_UIState() = runTest {
         createViewModel()
 
-        val testRewards = (0..5).map { Reward.builder().title("$it").id(it.toLong()).build() }
+        val testRewards = (0..5).map { Reward.builder().title("$it").id(it.toLong()).isAvailable(true).build() }
         val testBacking =
             Backing.builder().reward(testRewards[2]).rewardId(testRewards[2].id()).build()
         val testProject = Project.builder().rewards(testRewards).backing(testBacking).build()
@@ -65,7 +65,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
         createViewModel()
 
         val testRewards =
-            (0..5).map { Reward.builder().title("$it").id(it.toLong()).hasAddons(true).build() }
+            (0..5).map { Reward.builder().title("$it").id(it.toLong()).isAvailable(true).hasAddons(true).build() }
         val testProject = Project.builder().rewards(testRewards).build()
         val testProjectData = ProjectData.builder().project(testProject).build()
 
@@ -95,7 +95,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
 
         viewModel.onUserRewardSelection(testRewards[2])
 
-        assert(uiState.size == 2)
+        assert(uiState.size == 3)
         assert(flowState.size == 1)
         assertEquals(
             flowState.last(),
@@ -111,7 +111,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
         createViewModel()
 
         val testRewards =
-            (0..5).map { Reward.builder().title("$it").id(it.toLong()).hasAddons(false).build() }
+            (0..5).map { Reward.builder().title("$it").id(it.toLong()).isAvailable(true).hasAddons(false).build() }
         val testProject = Project.builder().rewards(testRewards).build()
         val testProjectData = ProjectData.builder().project(testProject).build()
 
@@ -141,7 +141,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
 
         viewModel.onUserRewardSelection(testRewards[2])
 
-        assert(uiState.size == 2)
+        assert(uiState.size == 3)
         assert(flowState.size == 1)
         assertEquals(
             flowState.last(),
@@ -157,7 +157,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
         createViewModel()
 
         val testRewards =
-            (0..5).map { Reward.builder().title("$it").id(it.toLong()).hasAddons(true).build() }
+            (0..5).map { Reward.builder().title("$it").id(it.toLong()).isAvailable(true).hasAddons(true).build() }
         val testBacking =
             Backing.builder().reward(testRewards[2]).rewardId(testRewards[2].id()).build()
         val testProject =
@@ -191,7 +191,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
 
         viewModel.onUserRewardSelection(testRewards[2])
 
-        assert(uiState.size == 2)
+        assert(uiState.size == 3)
         assert(flowState.size == 1)
         assertEquals(
             flowState.last(),
@@ -207,7 +207,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
         createViewModel()
 
         val testRewards =
-            (0..5).map { Reward.builder().title("$it").id(it.toLong()).hasAddons(true).build() }
+            (0..5).map { Reward.builder().title("$it").id(it.toLong()).isAvailable(true).hasAddons(true).build() }
         val testBacking =
             Backing.builder().reward(testRewards[3]).rewardId(testRewards[3].id()).build()
         val testProject =
@@ -241,7 +241,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
 
         viewModel.onUserRewardSelection(testRewards[2])
 
-        assert(uiState.size == 2)
+        assert(uiState.size == 3)
         assert(flowState.size == 1)
         assertEquals(
             flowState.last(),
@@ -257,7 +257,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
         createViewModel()
 
         val testRewards =
-            (0..5).map { Reward.builder().title("$it").id(it.toLong()).hasAddons(it != 2).build() }
+            (0..5).map { Reward.builder().title("$it").id(it.toLong()).isAvailable(true).hasAddons(it != 2).build() }
         val testBacking =
             Backing.builder().reward(testRewards[3]).rewardId(testRewards[3].id()).build()
         val testProject =
@@ -299,7 +299,8 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
                 rewardList = testRewards,
                 initialRewardIndex = 3,
                 project = testProjectData,
-                showAlertDialog = true
+                showAlertDialog = true,
+                selectedReward = testRewards[2]
             )
         )
 
@@ -312,7 +313,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
         createViewModel()
 
         val testRewards =
-            (0..5).map { Reward.builder().title("$it").id(it.toLong()).hasAddons(false).build() }
+            (0..5).map { Reward.builder().title("$it").id(it.toLong()).isAvailable(true).hasAddons(false).build() }
         val testBacking =
             Backing.builder().reward(testRewards[3]).rewardId(testRewards[3].id()).build()
         val testProject =
@@ -346,7 +347,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
 
         viewModel.onUserRewardSelection(testRewards[2])
 
-        assert(uiState.size == 2)
+        assert(uiState.size == 3)
         assert(flowState.size == 1)
         assertEquals(
             flowState.last(),
@@ -363,7 +364,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
             createViewModel()
 
             val testRewards = (0..5).map {
-                Reward.builder().title("$it").id(it.toLong()).hasAddons(true).shippingType("$it")
+                Reward.builder().title("$it").id(it.toLong()).isAvailable(true).hasAddons(true).shippingType("$it")
                     .build()
             }
             val testBacking =
@@ -407,7 +408,8 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
                     rewardList = testRewards,
                     initialRewardIndex = 3,
                     project = testProjectData,
-                    showAlertDialog = true
+                    showAlertDialog = true,
+                    selectedReward = testRewards[2]
                 )
             )
 
@@ -420,7 +422,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
         createViewModel()
 
         val testRewards = (0..5).map {
-            Reward.builder().title("$it").id(it.toLong()).hasAddons(true).shippingType("$it")
+            Reward.builder().title("$it").id(it.toLong()).isAvailable(true).hasAddons(true).shippingType("$it")
                 .build()
         }
         val testBacking =
@@ -464,7 +466,8 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
                 rewardList = testRewards,
                 initialRewardIndex = 3,
                 project = testProjectData,
-                showAlertDialog = true
+                showAlertDialog = true,
+                selectedReward = testRewards[2]
             )
         )
 
@@ -486,7 +489,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
         createViewModel()
 
         val testRewards = (0..5).map {
-            Reward.builder().title("$it").id(it.toLong()).hasAddons(it != 2).shippingType("$it")
+            Reward.builder().title("$it").id(it.toLong()).isAvailable(true).hasAddons(it != 2).shippingType("$it")
                 .build()
         }
         val testBacking =
@@ -530,7 +533,8 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
                 rewardList = testRewards,
                 initialRewardIndex = 3,
                 project = testProjectData,
-                showAlertDialog = true
+                showAlertDialog = true,
+                selectedReward = testRewards[2]
             )
         )
 
@@ -552,7 +556,7 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
         createViewModel()
 
         val testRewards = (0..5).map {
-            Reward.builder().title("$it").id(it.toLong()).hasAddons(it != 2).shippingType("$it")
+            Reward.builder().title("$it").id(it.toLong()).isAvailable(true).hasAddons(it != 2).shippingType("$it")
                 .build()
         }
         val testBacking =
@@ -596,7 +600,8 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
                 rewardList = testRewards,
                 initialRewardIndex = 3,
                 project = testProjectData,
-                showAlertDialog = true
+                showAlertDialog = true,
+                selectedReward = testRewards[2]
             )
         )
 
@@ -610,11 +615,52 @@ class RewardsSelectionViewModelTest : KSRobolectricTestCase() {
                 rewardList = testRewards,
                 initialRewardIndex = 3,
                 project = testProjectData,
-                showAlertDialog = false
+                showAlertDialog = false,
+                selectedReward = testRewards[2]
             )
         )
 
         this@RewardsSelectionViewModelTest.segmentTrack.assertValue(EventName.CTA_CLICKED.eventName)
+    }
+
+    @Test
+    fun `Test rewards list when given a list of rewards that contains unavailable rewards will produce a list of rewards with only rewards available`() = runTest {
+        createViewModel()
+        val testRewards = (0..8).map {
+            if (it % 2 == 0)
+                Reward.builder().title("$it").id(it.toLong()).isAvailable(true).hasAddons(it != 2).shippingType("$it")
+                    .build()
+            else
+                Reward.builder().title("$it").id(it.toLong()).isAvailable(false).hasAddons(it != 2).shippingType("$it")
+                    .build()
+        }
+
+        val testProject = Project.builder().rewards(testRewards).build()
+        val testProjectData = ProjectData.builder().project(testProject).build()
+
+        viewModel.provideProjectData(testProjectData)
+
+        val uiState = mutableListOf<RewardSelectionUIState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.rewardSelectionUIState.toList(uiState)
+        }
+
+        val filteredRewards = testRewards.filter { it.isAvailable() }
+        assertEquals(uiState.size, 2)
+
+        // - make sure the uiState output reward list is filtered
+        assertEquals(
+            uiState.last(),
+            RewardSelectionUIState(
+                rewardList = filteredRewards,
+                initialRewardIndex = 0,
+                project = testProjectData,
+                showAlertDialog = false
+            )
+        )
+
+        // - make sure the uiState output reward list is not the same as the provided reward list
+        assertNotSame(uiState.last().rewardList, testRewards.size)
     }
 
     @Test
