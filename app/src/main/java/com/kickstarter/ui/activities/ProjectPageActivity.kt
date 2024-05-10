@@ -540,7 +540,7 @@ class ProjectPageActivity :
                     val rewardsAndAddOns = confirmUiState.rewardsAndAddOns
                     val shippingAmount = confirmUiState.shippingAmount
                     val initialBonusAmount = confirmUiState.initialBonusSupportAmount
-                    val totalBonusSupportAmount = confirmUiState.totalBonusSupportAmount
+                    val totalBonusSupportAmount = confirmUiState.finalBonusSupportAmount
                     val maxPledgeAmount = confirmUiState.maxPledgeAmount
                     val minStepAmount = confirmUiState.minStepAmount
                     val confirmDetailsIsLoading = confirmUiState.isLoading
@@ -684,6 +684,9 @@ class ProjectPageActivity :
                         userEmail = userEmail,
                         onBonusSupportMinusClicked = { confirmDetailsViewModel.decrementBonusSupport() },
                         onBonusSupportPlusClicked = { confirmDetailsViewModel.incrementBonusSupport() },
+                        onBonusSupportInputted = { input ->
+                            confirmDetailsViewModel.inputBonusSupport(input)
+                        },
                         selectedAddOnsMap = selectedAddOnsMap,
                         onPledgeCtaClicked = { selectedCard ->
                             selectedCard?.apply {
@@ -1217,7 +1220,7 @@ class ProjectPageActivity :
     private fun onPaymentOption(paymentOption: PaymentOption?) {
         paymentOption?.let {
             flowController.confirm()
-            latePledgeCheckoutViewModel.onNewCardSuccessfullyAdded()
+            latePledgeCheckoutViewModel.loading()
         }
     }
 
@@ -1241,6 +1244,7 @@ class ProjectPageActivity :
             }
 
             is PaymentSheetResult.Completed -> {
+                latePledgeCheckoutViewModel.onNewCardSuccessfullyAdded()
             }
         }
     }
