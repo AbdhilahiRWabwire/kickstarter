@@ -37,7 +37,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.isGone
 import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.aghajari.zoomhelper.ZoomHelper
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 import com.google.firebase.crashlytics.FirebaseCrashlytics
@@ -576,7 +575,7 @@ class ProjectPageActivity :
 
                     LaunchedEffect(Unit) {
                         latePledgeCheckoutViewModel.clientSecretForNewPaymentMethod.collect {
-                            flowControllerPresentPaymentOption(it)
+                            flowControllerPresentPaymentOption(it, latePledgeCheckoutUIState.userEmail)
                         }
                     }
 
@@ -809,9 +808,6 @@ class ProjectPageActivity :
     }
 
     override fun dispatchTouchEvent(event: MotionEvent?): Boolean {
-        event?.let {
-            ZoomHelper.getInstance().dispatchTouchEvent(it, this)
-        }
 
         if (event?.action == MotionEvent.ACTION_DOWN) {
             val view = currentFocus
@@ -1262,10 +1258,10 @@ class ProjectPageActivity :
         }
     }
 
-    private fun flowControllerPresentPaymentOption(clientSecret: String) {
+    private fun flowControllerPresentPaymentOption(clientSecret: String, userEmail: String) {
         flowController.configureWithSetupIntent(
             setupIntentClientSecret = clientSecret,
-            configuration = getPaymentSheetConfiguration(),
+            configuration = getPaymentSheetConfiguration(userEmail, false),
             callback = ::onConfigured
         )
     }
