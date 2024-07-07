@@ -1,5 +1,6 @@
 package com.kickstarter.features.pledgedprojectsoverview.ui
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.OnBackPressedCallback
@@ -20,6 +21,7 @@ import com.kickstarter.libs.MessagePreviousScreenType
 import com.kickstarter.libs.utils.TransitionUtils
 import com.kickstarter.libs.utils.extensions.getEnvironment
 import com.kickstarter.libs.utils.extensions.isDarkModeEnabled
+import com.kickstarter.ui.IntentKey
 import com.kickstarter.ui.SharedPreferenceKey
 import com.kickstarter.ui.activities.AppThemes
 import com.kickstarter.ui.compose.designsystem.KickstarterApp
@@ -71,6 +73,9 @@ class PledgedProjectsOverviewActivity : AppCompatActivity() {
                         errorSnackBarHostState = snackbarHostState,
                         ppoCards = ppoCardPagingSource,
                         totalAlerts = totalAlerts.value,
+                        onAddressConfirmed = { viewModel.showSnackbarAndRefreshCardsList() },
+                        onCardClick = { },
+                        onProjectPledgeSummaryClick = { url -> openBackingDetailsWebView(url) },
                         onSendMessageClick = { projectName -> viewModel.onMessageCreatorClicked(projectName) }
                     )
                 }
@@ -96,5 +101,11 @@ class PledgedProjectsOverviewActivity : AppCompatActivity() {
                 })
             }
         }
+    }
+
+    private fun openBackingDetailsWebView(url: String) {
+        val intent = Intent(this, BackingDetailsActivity::class.java)
+            .putExtra(IntentKey.URL, url)
+        startActivity(intent)
     }
 }

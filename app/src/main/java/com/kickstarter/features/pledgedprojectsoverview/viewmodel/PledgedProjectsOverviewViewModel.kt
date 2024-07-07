@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import com.kickstarter.R
-import com.kickstarter.features.pledgedprojectsoverview.ui.PPOCardDataMock
+import com.kickstarter.features.pledgedprojectsoverview.data.PPOCard
 import com.kickstarter.libs.Environment
 import com.kickstarter.models.Project
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -25,14 +25,20 @@ import kotlinx.coroutines.rx2.asFlow
 
 class PledgedProjectsOverviewViewModel(environment: Environment) : ViewModel() {
 
-    private val ppoCards = MutableStateFlow<PagingData<PPOCardDataMock>>(PagingData.empty())
+    private val ppoCards = MutableStateFlow<PagingData<PPOCard>>(PagingData.empty())
     private val totalAlerts = MutableStateFlow<Int>(0)
     private var mutableProjectFlow = MutableSharedFlow<Project>()
     private var snackbarMessage: (stringID: Int) -> Unit = {}
 
     private val apolloClient = requireNotNull(environment.apolloClientV2())
-    val ppoCardsState: StateFlow<PagingData<PPOCardDataMock>> = ppoCards.asStateFlow()
+    val ppoCardsState: StateFlow<PagingData<PPOCard>> = ppoCards.asStateFlow()
     val totalAlertsState: StateFlow<Int> = totalAlerts.asStateFlow()
+
+    fun showSnackbarAndRefreshCardsList() {
+        snackbarMessage.invoke(R.string.address_confirmed_snackbar_text_fpo)
+
+        // TODO: MBL-1556 refresh the PPO list (i.e. requery the PPO list).
+    }
 
     val projectFlow: SharedFlow<Project>
         get() = mutableProjectFlow
