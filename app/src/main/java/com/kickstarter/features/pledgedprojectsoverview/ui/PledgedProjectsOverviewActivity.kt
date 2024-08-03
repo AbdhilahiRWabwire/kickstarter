@@ -2,7 +2,6 @@ package com.kickstarter.features.pledgedprojectsoverview.ui
 
 import android.app.Activity
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -10,7 +9,6 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.SnackbarHostState
 import androidx.compose.runtime.LaunchedEffect
@@ -43,16 +41,21 @@ class PledgedProjectsOverviewActivity : AppCompatActivity() {
     private lateinit var viewModelFactory: PledgedProjectsOverviewViewModel.Factory
     private val viewModel: PledgedProjectsOverviewViewModel by viewModels { viewModelFactory }
     private var theme = AppThemes.MATCH_SYSTEM.ordinal
-    private var startForResult = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val data = result.data?.getBooleanExtra(IntentKey.FIX_PAYMENT_SUCCESS, false)
-            data?.let {
-                if (it.isTrue()) {
+    private var startForResult =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                val data = result.data?.getBooleanExtra(IntentKey.FIX_PAYMENT_SUCCESS, false)
+                data?.let {
+                    if (it.isTrue()) {
+                        viewModel.getPledgedProjects()
+                    }
+                }
+                val refresh = result.data?.getStringExtra(IntentKey.REFRESH_PPO_LIST)
+                if (!refresh.isNullOrEmpty()) {
                     viewModel.getPledgedProjects()
                 }
             }
         }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,29 +70,20 @@ class PledgedProjectsOverviewActivity : AppCompatActivity() {
 
                 val ppoUIState by viewModel.ppoUIState.collectAsStateWithLifecycle()
 
-                val darkModeEnabled = this.isDarkModeEnabled(env = env)
                 val lazyListState = rememberLazyListState()
                 val snackbarHostState = remember { SnackbarHostState() }
                 val totalAlerts = viewModel.totalAlertsState.collectAsStateWithLifecycle().value
 
                 val ppoCardPagingSource = viewModel.ppoCardsState.collectAsLazyPagingItems()
 
-                val isLoading = ppoUIState.isLoading || ppoCardPagingSource.loadState.append is LoadState.Loading || ppoCardPagingSource.loadState.refresh is LoadState.Loading
+                val isLoading =
+                    ppoUIState.isLoading || ppoCardPagingSource.loadState.append is LoadState.Loading || ppoCardPagingSource.loadState.refresh is LoadState.Loading
                 val isErrored = ppoUIState.isErrored || ppoCardPagingSource.loadState.hasError
-                val showEmptyState = ppoCardPagingSource.loadState.refresh is LoadState.NotLoading && ppoCardPagingSource.itemCount == 0
+                val showEmptyState =
+                    ppoCardPagingSource.loadState.refresh is LoadState.NotLoading && ppoCardPagingSource.itemCount == 0
 
                 KickstarterApp(
-                    useDarkTheme =
-                    if (darkModeEnabled) {
-                        when (theme) {
-                            AppThemes.MATCH_SYSTEM.ordinal -> isSystemInDarkTheme()
-                            AppThemes.DARK.ordinal -> true
-                            AppThemes.LIGHT.ordinal -> false
-                            else -> false
-                        }
-                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        isSystemInDarkTheme()
-                    } else false
+                    useDarkTheme = isDarkModeEnabled(env = env)
                 ) {
                     PledgedProjectsOverviewScreen(
                         modifier = Modifier,
@@ -99,29 +93,72 @@ class PledgedProjectsOverviewActivity : AppCompatActivity() {
                         ppoCards = ppoCardPagingSource,
                         totalAlerts = totalAlerts,
                         onAddressConfirmed = { viewModel.showSnackbarAndRefreshCardsList() },
-                        onProjectPledgeSummaryClick = { url -> openBackingDetailsWebView(url) },
-                        onSendMessageClick = { projectName -> viewModel.onMessageCreatorClicked(projectName) },
+                        onProjectPledgeSummaryClick = { url ->
+                            openBackingDetailsWebView(
+                                url = url,
+                                resultLauncher = null
+                            )
+                        },
+                        onSendMessageClick = { projectName ->
+                            viewModel.onMessageCreatorClicked(
+                                projectName
+                            )
+                        },
                         isLoading = isLoading,
                         isErrored = isErrored,
                         showEmptyState = showEmptyState,
                         onSeeAllBackedProjectsClick = { startProfileActivity() },
                         pullRefreshCallback = {
-                            // TODO call viewmodel.getPledgedProjects() here
+                            viewModel.getPledgedProjects()
                         },
-                        onFixPaymentClick = { projectSlug -> openManagePledge(projectSlug, resultLauncher = startForResult) }
+                        onPrimaryActionButtonClicked = { PPOCard ->
+                            when (PPOCard.viewType()) {
+                                PPOCardViewType.FIX_PAYMENT -> {
+                                    openManagePledge(
+                                        PPOCard.projectSlug ?: "",
+                                        resultLauncher = startForResult
+                                    )
+                                }
+
+                                PPOCardViewType.TAKE_SURVEY -> {
+                                    openBackingDetailsWebView(
+                                        url = PPOCard.backingDetailsUrl ?: "",
+                                        resultLauncher = startForResult
+                                    )
+                                }
+
+                                PPOCardViewType.CONFIRM_ADDRESS -> {
+                                    openBackingDetailsWebView(
+                                        url = PPOCard.backingDetailsUrl ?: "",
+                                        resultLauncher = startForResult
+                                    )
+                                }
+
+                                else -> {
+                                }
+                            }
+                        },
+                        onSecondaryActionButtonClicked = { PPOCard ->
+                        },
                     )
                 }
 
                 LaunchedEffect(Unit) {
                     viewModel.projectFlow
                         .collect {
-                            startCreatorMessageActivity(project = it, previousScreen = MessagePreviousScreenType.PLEDGED_PROJECTS_OVERVIEW)
+                            startCreatorMessageActivity(
+                                project = it,
+                                previousScreen = MessagePreviousScreenType.PLEDGED_PROJECTS_OVERVIEW
+                            )
                         }
                 }
 
-                viewModel.provideSnackbarMessage {
+                viewModel.provideSnackbarMessage { stringId, type ->
                     lifecycleScope.launch {
-                        snackbarHostState.showSnackbar(getString(it))
+                        snackbarHostState.showSnackbar(
+                            message = getString(stringId),
+                            actionLabel = type
+                        )
                     }
                 }
 
@@ -135,13 +172,24 @@ class PledgedProjectsOverviewActivity : AppCompatActivity() {
         }
     }
 
-    private fun openBackingDetailsWebView(url: String) {
-        val intent = Intent(this, BackingDetailsActivity::class.java)
-            .putExtra(IntentKey.URL, url)
-        startActivity(intent)
+    private fun openBackingDetailsWebView(
+        url: String,
+        resultLauncher: ActivityResultLauncher<Intent>?
+    ) {
+        resultLauncher?.launch(
+            Intent(this, BackingDetailsActivity::class.java)
+                .putExtra(IntentKey.URL, url)
+        ) ?: {
+            val intent = Intent(this, BackingDetailsActivity::class.java)
+                .putExtra(IntentKey.URL, url)
+            startActivity(intent)
+        }
+        this.let {
+            TransitionUtils.transition(it, TransitionUtils.slideInFromRight())
+        }
     }
 
-    fun startProfileActivity() {
+    private fun startProfileActivity() {
         startActivity(
             Intent(this, ProfileActivity::class.java)
         )
@@ -150,7 +198,10 @@ class PledgedProjectsOverviewActivity : AppCompatActivity() {
         }
     }
 
-    private fun openManagePledge(projectSlug: String, resultLauncher: ActivityResultLauncher<Intent>) {
+    private fun openManagePledge(
+        projectSlug: String,
+        resultLauncher: ActivityResultLauncher<Intent>
+    ) {
         resultLauncher.launch(
             Intent().getProjectIntent(this)
                 .putExtra(IntentKey.PROJECT_PARAM, projectSlug)
