@@ -9,7 +9,9 @@ import type.CurrencyCode
 class PPOCard private constructor(
     val backingId: String?,
     val address: String?,
+    val addressID: String?,
     val amount: String?,
+    val clientSecret: String?,
     val currencyCode: CurrencyCode?,
     val currencySymbol: String?,
     val projectName: String?,
@@ -27,7 +29,9 @@ class PPOCard private constructor(
 
     fun backingId() = this.backingId
     fun address() = this.address
+    fun addressID() = this.addressID
     fun amount() = this.amount
+    fun clientSecret() = this.clientSecret
     fun currencyCode() = this.currencyCode
     fun currencySymbol() = this.currencySymbol
     fun projectName() = this.projectName
@@ -45,7 +49,9 @@ class PPOCard private constructor(
     data class Builder(
         var backingId: String? = null,
         var address: String? = null,
+        var addressID: String? = null,
         var amount: String? = null,
+        var clientSecret: String? = null,
         var currencyCode: CurrencyCode? = null,
         var currencySymbol: String? = null,
         var projectName: String? = null,
@@ -62,7 +68,9 @@ class PPOCard private constructor(
 
         fun backingId(backingId: String?) = apply { this.backingId = backingId }
         fun address(address: String?) = apply { this.address = address }
+        fun addressID(addressID: String?) = apply { this.addressID = addressID }
         fun amount(amount: String?) = apply { this.amount = amount }
+        fun clientSecret(clientSecret: String?) = apply { this.clientSecret = clientSecret }
         fun currencyCode(currencyCode: CurrencyCode?) = apply { this.currencyCode = currencyCode }
         fun currencySymbol(currencySymbol: String?) = apply { this.currencySymbol = currencySymbol }
         fun projectName(projectName: String?) = apply { this.projectName = projectName }
@@ -79,7 +87,9 @@ class PPOCard private constructor(
         fun build() = PPOCard(
             backingId = backingId,
             address = address,
+            addressID = addressID,
             amount = amount,
+            clientSecret = clientSecret,
             currencyCode = currencyCode,
             currencySymbol = currencySymbol,
             projectName = projectName,
@@ -98,7 +108,9 @@ class PPOCard private constructor(
     fun toBuilder() = Builder(
         backingId = backingId,
         address = address,
+        addressID = addressID,
         amount = amount,
+        clientSecret = clientSecret,
         currencyCode = currencyCode,
         currencySymbol = currencySymbol,
         projectName = projectName,
@@ -123,7 +135,9 @@ class PPOCard private constructor(
         if (other is PPOCard) {
             equals = backingId() == other.backingId() &&
                 address() == other.address() &&
+                addressID() == other.addressID() &&
                 amount() == other.amount() &&
+                clientSecret() == other.clientSecret() &&
                 currencyCode() == other.currencyCode() &&
                 currencySymbol() == other.currencySymbol() &&
                 projectName() == other.projectName() &&
