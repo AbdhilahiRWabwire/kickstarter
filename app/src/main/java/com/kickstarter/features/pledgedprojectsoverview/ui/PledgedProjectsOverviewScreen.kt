@@ -43,6 +43,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import com.kickstarter.R
 import com.kickstarter.features.pledgedprojectsoverview.data.PPOCard
 import com.kickstarter.features.pledgedprojectsoverview.data.PPOCardFactory
+import com.kickstarter.libs.utils.extensions.isNullOrZero
 import com.kickstarter.ui.compose.designsystem.KSAlertDialog
 import com.kickstarter.ui.compose.designsystem.KSCircularProgressIndicator
 import com.kickstarter.ui.compose.designsystem.KSErrorSnackbar
@@ -225,11 +226,13 @@ fun PledgedProjectsOverviewScreen(
                     state = lazyColumnListState
                 ) {
                     item {
-                        Text(
-                            text = stringResource(id = R.string.alerts_fpo, totalAlerts),
-                            style = typography.title3Bold,
-                            color = colors.textPrimary
-                        )
+                        if (!totalAlerts.isNullOrZero()) {
+                            Text(
+                                text = stringResource(id = R.string.alerts_fpo, totalAlerts),
+                                style = typography.title3Bold,
+                                color = colors.textPrimary
+                            )
+                        }
                     }
 
                     items(
@@ -249,7 +252,6 @@ fun PledgedProjectsOverviewScreen(
                                 creatorName = it.creatorName(),
                                 sendAMessageClickAction = { onSendMessageClick(it.projectSlug() ?: "") },
                                 shippingAddress = it.address() ?: "", // TODO replace with formatted address from PPO response
-                                showBadge = it.showBadge(),
                                 onActionButtonClicked = {
                                     onPrimaryActionButtonClicked(it)
                                 },
