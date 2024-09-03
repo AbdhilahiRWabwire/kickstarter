@@ -7,12 +7,14 @@ import TriggerThirdPartyEventMutation
 import UserPrivacyQuery
 import com.google.android.gms.common.util.Base64Utils
 import com.google.gson.Gson
+import com.kickstarter.features.pledgedprojectsoverview.data.Flag
 import com.kickstarter.features.pledgedprojectsoverview.data.PPOCard
 import com.kickstarter.features.pledgedprojectsoverview.data.PledgeTierType
 import com.kickstarter.features.pledgedprojectsoverview.data.PledgedProjectsOverviewEnvelope
 import com.kickstarter.features.pledgedprojectsoverview.data.PledgedProjectsOverviewQueryData
 import com.kickstarter.features.pledgedprojectsoverview.ui.PPOCardViewType
 import com.kickstarter.libs.Permission
+import com.kickstarter.libs.utils.extensions.isNotNull
 import com.kickstarter.libs.utils.extensions.negate
 import com.kickstarter.mock.factories.RewardFactory
 import com.kickstarter.models.AiDisclosure
@@ -158,8 +160,14 @@ fun rewardTransformer(
     val limit = if (isAddOn) chooseLimit(rewardGr.limit(), rewardGr.limitPerBacker())
     else rewardGr.limit()
 
-    val shippingRules = shippingRulesExpanded.map {
-        shippingRuleTransformer(it)
+    val shippingRules = if (shippingRulesExpanded.isNotEmpty()) {
+        shippingRulesExpanded.map {
+            shippingRuleTransformer(it)
+        }
+    } else {
+        rewardGr.shippingRules().map {
+            shippingRuleTransformer(it.fragments().shippingRule())
+        }
     }
 
     val localReceiptLocation = locationTransformer(rewardGr.localReceiptLocation()?.fragments()?.location())
@@ -707,6 +715,7 @@ fun backingTransformer(backingGr: fragment.Backing?): Backing {
     val reward = backingGr?.reward()?.fragments()?.reward()?.let { reward ->
         return@let rewardTransformer(
             reward,
+            allowedAddons = reward.allowedAddons().isNotNull(),
             rewardItems = complexRewardItemsTransformer(items?.fragments()?.rewardItems())
         )
     }
@@ -797,14 +806,18 @@ fun videoTransformer(video: fragment.Video?): Video {
  * @return ShippingRule
  */
 fun shippingRuleTransformer(rule: fragment.ShippingRule): ShippingRule {
-    val cost = rule.cost()?.fragments()?.amount()?.amount()?.toDouble() ?: 0.0
+    val cost = rule.cost()?.fragments()?.amount()?.amount()?.toDoubleOrNull() ?: 0.0
     val location = rule.location()?.let {
         locationTransformer(it.fragments().location())
     }
+    val estimatedMin = rule.estimatedMin()?.amount()?.toDoubleOrNull() ?: 0.0
+    val estimatedMax = rule.estimatedMax()?.amount()?.toDoubleOrNull() ?: 0.0
 
     return ShippingRule.builder()
         .cost(cost)
         .location(location)
+        .estimatedMin(estimatedMin)
+        .estimatedMax(estimatedMax)
         .build()
 }
 
@@ -920,6 +933,9 @@ fun pledgedProjectsOverviewEnvelopeTransformer(ppoResponse: PledgedProjectsOverv
     val ppoCards =
         ppoResponse.pledges()?.edges()?.map {
             val ppoBackingData = it.node()?.backing()?.fragments()?.ppoCard()
+            val flags = it.node()?.flags()?.map { flag ->
+                Flag.builder().message(flag.message()).icon(flag.icon()).type(flag.type()).build()
+            }
             PPOCard.builder()
                 .backingId(ppoBackingData?.id())
                 .backingDetailsUrl(ppoBackingData?.backingDetailsPageUrl())
@@ -933,6 +949,7 @@ fun pledgedProjectsOverviewEnvelopeTransformer(ppoResponse: PledgedProjectsOverv
                 .imageUrl(ppoBackingData?.project()?.fragments()?.full()?.image()?.url())
                 .creatorName(ppoBackingData?.project()?.creator()?.name())
                 .viewType(getTierType(it.node()?.tierType()))
+                .flags(flags)
                 .addressID(ppoBackingData?.deliveryAddress()?.id())
                 .build()
         }
