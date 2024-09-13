@@ -45,6 +45,7 @@ import com.kickstarter.services.mutations.CreateAttributionEventData
 import com.kickstarter.services.mutations.CreateOrUpdateBackingAddressData
 import com.kickstarter.viewmodels.usecases.TPEventInputData
 import fragment.FullProject
+import fragment.PpoCard.DeliveryAddress
 import fragment.ProjectCard
 import org.jetbrains.annotations.Nullable
 import org.joda.time.DateTime
@@ -501,7 +502,10 @@ fun userPrivacyTransformer(userPrivacy: UserPrivacyQuery.Me): UserPrivacy {
         isCreator = userPrivacy.isCreator ?: false,
         isDeliverable = userPrivacy.isDeliverable ?: false,
         isEmailVerified = userPrivacy.isEmailVerified ?: false,
-        chosenCurrency = userPrivacy.chosenCurrency() ?: defaultCurrency
+        chosenCurrency = userPrivacy.chosenCurrency() ?: defaultCurrency,
+        enabledFeatures = userPrivacy.enabledFeatures().map {
+            it.rawValue()
+        }
     )
 }
 
@@ -938,7 +942,7 @@ fun pledgedProjectsOverviewEnvelopeTransformer(ppoResponse: PledgedProjectsOverv
             }
             PPOCard.builder()
                 .backingId(ppoBackingData?.id())
-                .backingDetailsUrl(ppoBackingData?.backingDetailsPageUrl())
+                .backingDetailsUrl(ppoBackingData?.backingDetailsPageRoute())
                 .clientSecret(ppoBackingData?.clientSecret())
                 .amount(ppoBackingData?.amount()?.fragments()?.amount()?.amount())
                 .currencyCode(ppoBackingData?.amount()?.fragments()?.amount()?.currency())
@@ -948,9 +952,11 @@ fun pledgedProjectsOverviewEnvelopeTransformer(ppoResponse: PledgedProjectsOverv
                 .projectSlug(ppoBackingData?.project()?.slug())
                 .imageUrl(ppoBackingData?.project()?.fragments()?.full()?.image()?.url())
                 .creatorName(ppoBackingData?.project()?.creator()?.name())
+                .creatorID(ppoBackingData?.project()?.creator()?.id())
                 .viewType(getTierType(it.node()?.tierType()))
+                .surveyID(ppoBackingData?.project()?.backerSurvey()?.id())
                 .flags(flags)
-                .addressID(ppoBackingData?.deliveryAddress()?.id())
+                .deliveryAddress(getDeliveryAddress(ppoBackingData?.deliveryAddress()))
                 .build()
         }
 
@@ -968,6 +974,21 @@ fun pledgedProjectsOverviewEnvelopeTransformer(ppoResponse: PledgedProjectsOverv
         .pledges(ppoCards)
         .pageInfoEnvelope(pageInfoEnvelope)
         .build()
+}
+
+fun getDeliveryAddress(deliveryAddress: DeliveryAddress?): com.kickstarter.features.pledgedprojectsoverview.data.DeliveryAddress? {
+    deliveryAddress?.let { address ->
+        return com.kickstarter.features.pledgedprojectsoverview.data.DeliveryAddress.builder()
+            .addressId(address.id())
+            .addressLine1(address.addressLine1())
+            .addressLine2(address.addressLine2())
+            .city(address.city())
+            .region(address.region())
+            .postalCode(address.postalCode())
+            .phoneNumber(address.phoneNumber())
+            .recipientName(address.recipientName())
+            .build()
+    } ?: return null
 }
 
 fun getTierType(tierType: String?) =
